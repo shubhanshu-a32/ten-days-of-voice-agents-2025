@@ -1,228 +1,258 @@
+
 import logging
 import json
 import os
-from datetime import datetime
-from pathlib import Path
+import asyncio
+from typing import Annotated, Literal, Optional
+from dataclasses import dataclass
+
+print("\n" + "💻" * 50)
+print("💡 agent.py LOADED SUCCESSFULLY!")
+print("💻" * 50 + "\n")
 
 from dotenv import load_dotenv
+from pydantic import Field
 from livekit.agents import (
     Agent,
     AgentSession,
     JobContext,
     JobProcess,
-    MetricsCollectedEvent,
     RoomInputOptions,
     WorkerOptions,
     cli,
-    metrics,
-    tokenize,
     function_tool,
-    RunContext
+    RunContext,
 )
+
+# 🔌 PLUGINS
 from livekit.plugins import murf, silero, google, deepgram, noise_cancellation
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
 logger = logging.getLogger("agent")
-
 load_dotenv(".env.local")
 
-# Path to wellness log file
-WELLNESS_LOG_PATH = Path(__file__).parent.parent / "wellness_log.json"
 
 
-# Helper functions for JSON persistence
-def load_wellness_log():
-    """Load wellness log from JSON file."""
-    if WELLNESS_LOG_PATH.exists():
-        try:
-            with open(WELLNESS_LOG_PATH, 'r') as f:
-                return json.load(f)
-        except json.JSONDecodeError:
-            logger.warning("Invalid JSON in wellness log, starting fresh")
-            return {"check_ins": []}
-    return {"check_ins": []}
+CONTENT_FILE = "cs_content.json" 
 
+# 💻 CS ENGINEERING TOPICS
+DEFAULT_CONTENT = [
+  {
+    "id": "variables",
+    "title": "Variables & Data Types",
+    "summary": "Variables are containers that store data values in memory. In programming, each variable has a data type (like int, string, float, boolean) that determines what kind of data it can hold and what operations can be performed on it. Variables allow us to reuse values throughout our code without hardcoding them repeatedly.",
+    "sample_question": "What is a variable and why do we need different data types? Give examples of at least three common data types."
+  },
+  {
+    "id": "loops",
+    "title": "Loops (Iteration)",
+    "summary": "Loops are control structures that repeat a block of code multiple times. The three main types are: FOR loops (when you know how many iterations), WHILE loops (when you loop until a condition is false), and DO-WHILE loops (executes at least once before checking condition). Loops prevent code duplication and enable processing of collections.",
+    "sample_question": "Explain the difference between a for loop and a while loop. When would you use each one?"
+  },
+  {
+    "id": "functions",
+    "title": "Functions & Methods",
+    "summary": "Functions are reusable blocks of code that perform specific tasks. They take inputs (parameters), process them, and optionally return outputs. Functions promote code reusability, modularity, and maintainability. They help break complex problems into smaller, manageable pieces following the DRY principle (Don't Repeat Yourself).",
+    "sample_question": "What is the difference between parameters and arguments? Why are functions important in programming?"
+  },
+  {
+    "id": "oop",
+    "title": "Object-Oriented Programming",
+    "summary": "OOP is a programming paradigm based on objects that contain both data (attributes) and behavior (methods). The four pillars of OOP are: Encapsulation (bundling data and methods), Inheritance (creating new classes from existing ones), Polymorphism (same interface, different implementations), and Abstraction (hiding complex details).",
+    "sample_question": "Explain the concept of inheritance in OOP with a real-world example. How does it promote code reuse?"
+  }
+]
 
-def save_wellness_log(data):
-    """Save wellness log to JSON file."""
-    with open(WELLNESS_LOG_PATH, 'w') as f:
-        json.dump(data, f, indent=2)
+def load_content():
+    """
+    📖 Checks if CS content JSON exists. 
+    If NO: Generates it from DEFAULT_CONTENT.
+    If YES: Loads it.
+    """
+    try:
+        path = os.path.join(os.path.dirname(__file__), CONTENT_FILE)
+        
+        # Check if file exists
+        if not os.path.exists(path):
+            print(f"⚠️ {CONTENT_FILE} not found. Generating CS content data...")
+            with open(path, "w", encoding='utf-8') as f:
+                json.dump(DEFAULT_CONTENT, f, indent=4)
+            print("✅ CS content file created successfully.")
+            
+        # Read the file
+        with open(path, "r", encoding='utf-8') as f:
+            data = json.load(f)
+            return data
+            
+    except Exception as e:
+        print(f"⚠️ Error managing content file: {e}")
+        return []
 
+# Load data immediately on startup
+COURSE_CONTENT = load_content()
 
-class Assistant(Agent):
-    def __init__(self) -> None:
+# ======================================================
+# 🧠 STATE MANAGEMENT
+# ======================================================
+
+@dataclass
+class TutorState:
+    """🧠 Tracks the current learning context"""
+    current_topic_id: str | None = None
+    current_topic_data: dict | None = None
+    mode: Literal["learn", "quiz", "teach_back"] = "learn"
+    
+    def set_topic(self, topic_id: str):
+        # Find topic in loaded content
+        topic = next((item for item in COURSE_CONTENT if item["id"] == topic_id), None)
+        if topic:
+            self.current_topic_id = topic_id
+            self.current_topic_data = topic
+            return True
+        return False
+
+@dataclass
+class Userdata:
+    tutor_state: TutorState
+    agent_session: Optional[AgentSession] = None 
+
+# ======================================================
+# 🛠️ TUTOR TOOLS
+# ======================================================
+
+@function_tool
+async def select_topic(
+    ctx: RunContext[Userdata], 
+    topic_id: Annotated[str, Field(description="The ID of the topic to study (e.g., 'variables', 'loops', 'functions', 'oop')")]
+) -> str:
+    """📚 Selects a topic to study from the available list."""
+    state = ctx.userdata.tutor_state
+    success = state.set_topic(topic_id.lower())
+    
+    if success:
+        return f"Topic set to {state.current_topic_data['title']}. Ask the user if they want to 'Learn', be 'Quizzed', or 'Teach it back'."
+    else:
+        available = ", ".join([t["id"] for t in COURSE_CONTENT])
+        return f"Topic not found. Available topics are: {available}"
+
+@function_tool
+async def set_learning_mode(
+    ctx: RunContext[Userdata], 
+    mode: Annotated[str, Field(description="The mode to switch to: 'learn', 'quiz', or 'teach_back'")]
+) -> str:
+    """🔄 Switches the interaction mode and updates the agent's voice/persona."""
+    
+    # 1. Update State
+    state = ctx.userdata.tutor_state
+    state.mode = mode.lower()
+    
+    # 2. Switch Voice based on Mode
+    agent_session = ctx.userdata.agent_session 
+    
+    if agent_session:
+        if state.mode == "learn":
+            # 👨‍🏫 MATTHEW: The Lecturer
+            agent_session.tts.update_options(voice="en-US-matthew", style="Promo")
+            instruction = f"Mode: LEARN. Explain: {state.current_topic_data['summary']}"
+            
+        elif state.mode == "quiz":
+            # 👩‍🏫 ALICIA: The Examiner
+            agent_session.tts.update_options(voice="en-US-alicia", style="Conversational")
+            instruction = f"Mode: QUIZ. Ask this question: {state.current_topic_data['sample_question']}"
+            
+        elif state.mode == "teach_back":
+            # 👨‍🎓 KEN: The Student/Coach
+            agent_session.tts.update_options(voice="en-US-ken", style="Promo")
+            instruction = "Mode: TEACH_BACK. Ask the user to explain the concept to you as if YOU are the beginner."
+        else:
+            return "Invalid mode."
+    else:
+        instruction = "Voice switch failed (Session not found)."
+
+    print(f"🔄 SWITCHING MODE -> {state.mode.upper()}")
+    return f"Switched to {state.mode} mode. {instruction}"
+
+@function_tool
+async def evaluate_teaching(
+    ctx: RunContext[Userdata],
+    user_explanation: Annotated[str, Field(description="The explanation given by the user during teach-back")]
+) -> str:
+    """📝 call this when the user has finished explaining a concept in 'teach_back' mode."""
+    print(f"📝 EVALUATING EXPLANATION: {user_explanation}")
+    return "Analyze the user's explanation. Give them a score out of 10 on accuracy and clarity, and correct any mistakes."
+
+# ======================================================
+# 🧠 AGENT DEFINITION
+# ======================================================
+
+class TutorAgent(Agent):
+    def __init__(self):
+        # Generate list of topics for the prompt
+        topic_list = ", ".join([f"{t['id']} ({t['title']})" for t in COURSE_CONTENT])
+        
         super().__init__(
-            instructions="""You are a supportive health and wellness voice companion. The user is interacting with you via voice.
+            instructions=f"""
+            You are a Computer Science Tutor designed to help users master programming concepts.
             
-            Your role is to:
-            1. Conduct friendly, supportive daily check-ins about mood, energy, and wellness
-            2. Ask about their intentions and objectives for the day (1-3 simple goals)
-            3. Offer realistic, grounded, and actionable advice - keep it simple and practical
-            4. Avoid any medical diagnosis or clinical claims - you are a supportive companion, not a clinician
-            5. Close each check-in with a brief recap of mood and objectives, and ask for confirmation
+            📚 **AVAILABLE TOPICS:** {topic_list}
             
-            Your conversation style:
-            - Warm, empathetic, and non-judgmental
-            - Concise and to the point - keep responses short
-            - No complex formatting, emojis, or special symbols
-            - Encourage small, achievable steps rather than overwhelming goals
+            🔄 **YOU HAVE 3 MODES:**
+            1. **LEARN Mode (Voice: Matthew):** You explain the concept clearly using the summary data.
+            2. **QUIZ Mode (Voice: Alicia):** You ask the user a specific question to test knowledge.
+            3. **TEACH_BACK Mode (Voice: Ken):** YOU pretend to be a student. Ask the user to explain the concept to you.
             
-            When starting a conversation, check if there are previous check-ins using the get_previous_checkins tool.
-            If there are previous entries, reference them naturally (e.g., "Last time we talked, you mentioned being low on energy. How does today compare?").
-            
-            After the check-in conversation, use the save_wellness_checkin tool to persist the data.
+            ⚙️ **BEHAVIOR:**
+            - Start by asking what topic they want to study.
+            - Use the `set_learning_mode` tool immediately when the user asks to learn, take a quiz, or teach.
+            - In 'teach_back' mode, listen to their explanation and then use `evaluate_teaching` to give feedback.
             """,
+            tools=[select_topic, set_learning_mode, evaluate_teaching],
         )
 
-    @function_tool
-    async def get_previous_checkins(self, context: RunContext, limit: int = 3):
-        """Retrieve previous wellness check-ins to reference past conversations.
-        
-        Use this tool at the start of a conversation to personalize the check-in based on previous sessions.
-        
-        Args:
-            limit: Maximum number of previous check-ins to retrieve (default: 3)
-        """
-        logger.info(f"Retrieving last {limit} check-ins")
-        
-        data = load_wellness_log()
-        check_ins = data.get("check_ins", [])
-        
-        if not check_ins:
-            return "No previous check-ins found. This appears to be the first session."
-        
-        # Get the most recent check-ins
-        recent = check_ins[-limit:]
-        recent.reverse()  # Most recent first
-        
-        summary = f"Found {len(recent)} previous check-in(s):\n"
-        for i, entry in enumerate(recent, 1):
-            summary += f"\n{i}. Date: {entry.get('date')}\n"
-            summary += f"   Mood: {entry.get('mood', 'N/A')}\n"
-            summary += f"   Objectives: {', '.join(entry.get('objectives', []))}\n"
-            if entry.get('summary'):
-                summary += f"   Summary: {entry.get('summary')}\n"
-        
-        return summary
-    
-    @function_tool
-    async def save_wellness_checkin(self, context: RunContext, mood: str, objectives: list[str], summary: str = ""):
-        """Save the current wellness check-in data to persistent storage.
-        
-        Call this tool after completing a check-in conversation with the user.
-        
-        Args:
-            mood: User's self-reported mood or energy level (text description)
-            objectives: List of 1-3 intentions or goals the user stated for the day
-            summary: Optional brief summary sentence of the check-in
-        """
-        logger.info(f"Saving check-in: mood={mood}, objectives={objectives}")
-        
-        data = load_wellness_log()
-        
-        # Create new check-in entry
-        entry = {
-            "date": datetime.now().isoformat(),
-            "mood": mood,
-            "objectives": objectives,
-        }
-        
-        if summary:
-            entry["summary"] = summary
-        
-        # Add to check-ins list
-        data["check_ins"].append(entry)
-        
-        # Save to file
-        save_wellness_log(data)
-        
-        return f"Check-in saved successfully! Recorded mood: {mood}, and {len(objectives)} objective(s)."
-
+# ======================================================
+# 🎬 ENTRYPOINT
+# ======================================================
 
 def prewarm(proc: JobProcess):
     proc.userdata["vad"] = silero.VAD.load()
 
-
 async def entrypoint(ctx: JobContext):
-    # Logging setup
-    # Add any other context you want in all log entries here
-    ctx.log_context_fields = {
-        "room": ctx.room.name,
-    }
+    ctx.log_context_fields = {"room": ctx.room.name}
 
-    # Set up a voice AI pipeline using OpenAI, Cartesia, AssemblyAI, and the LiveKit turn detector
+    print("\n" + "💻" * 25)
+    print("🚀 STARTING CS TUTOR SESSION")
+    print(f"📚 Loaded {len(COURSE_CONTENT)} topics from Knowledge Base")
+    
+    # 1. Initialize State
+    userdata = Userdata(tutor_state=TutorState())
+
+    # 2. Setup Agent
     session = AgentSession(
-        # Speech-to-text (STT) is your agent's ears, turning the user's speech into text that the LLM can understand
-        # See all available models at https://docs.livekit.io/agents/models/stt/
-        stt=deepgram.STT(model="nova-2"),
-        # A Large Language Model (LLM) is your agent's brain, processing user input and generating a response
-        # See all available models at https://docs.livekit.io/agents/models/llm/
-        llm=google.LLM(
-                model="gemini-2.5-flash",
-            ),
-        # Text-to-speech (TTS) is your agent's voice, turning the LLM's text into speech that the user can hear
-        # See all available models as well as voice selections at https://docs.livekit.io/agents/models/tts/
+        stt=deepgram.STT(model="nova-3"),
+        llm=google.LLM(model="gemini-2.5-flash"),
         tts=murf.TTS(
-                voice="en-US-matthew", 
-                style="Conversation",
-                tokenizer=tokenize.basic.SentenceTokenizer(min_sentence_len=2),
-                text_pacing=True
-            ),
-        # VAD and turn detection are used to determine when the user is speaking and when the agent should respond
-        # See more at https://docs.livekit.io/agents/build/turns
+            voice="en-US-matthew", 
+            style="Promo",        
+            text_pacing=True,
+        ),
         turn_detection=MultilingualModel(),
         vad=ctx.proc.userdata["vad"],
-        # allow the LLM to generate a response while waiting for the end of turn
-        # See more at https://docs.livekit.io/agents/build/audio/#preemptive-generation
-        preemptive_generation=True,
+        userdata=userdata,
     )
-
-    # To use a realtime model instead of a voice pipeline, use the following session setup instead.
-    # (Note: This is for the OpenAI Realtime API. For other providers, see https://docs.livekit.io/agents/models/realtime/))
-    # 1. Install livekit-agents[openai]
-    # 2. Set OPENAI_API_KEY in .env.local
-    # 3. Add `from livekit.plugins import openai` to the top of this file
-    # 4. Use the following session setup instead of the version above
-    # session = AgentSession(
-    #     llm=openai.realtime.RealtimeModel(voice="marin")
-    # )
-
-    # Metrics collection, to measure pipeline performance
-    # For more information, see https://docs.livekit.io/agents/build/metrics/
-    usage_collector = metrics.UsageCollector()
-
-    @session.on("metrics_collected")
-    def _on_metrics_collected(ev: MetricsCollectedEvent):
-        metrics.log_metrics(ev.metrics)
-        usage_collector.collect(ev.metrics)
-
-    async def log_usage():
-        summary = usage_collector.get_summary()
-        logger.info(f"Usage: {summary}")
-
-    ctx.add_shutdown_callback(log_usage)
-
-    # # Add a virtual avatar to the session, if desired
-    # # For other providers, see https://docs.livekit.io/agents/models/avatar/
-    # avatar = hedra.AvatarSession(
-    #   avatar_id="...",  # See https://docs.livekit.io/agents/models/avatar/plugins/hedra
-    # )
-    # # Start the avatar and wait for it to join
-    # await avatar.start(session, room=ctx.room)
-
-    # Start the session, which initializes the voice pipeline and warms up the models
+    
+    # 3. Store session in userdata for tools to access
+    userdata.agent_session = session
+    
+    # 4. Start
     await session.start(
-        agent=Assistant(),
+        agent=TutorAgent(),
         room=ctx.room,
-        # Disable noise cancellation for local development (requires LiveKit Cloud)
-        # room_input_options=RoomInputOptions(
-        #     noise_cancellation=noise_cancellation.BVC(),
-        # ),
+        room_input_options=RoomInputOptions(
+            noise_cancellation=noise_cancellation.BVC()
+        ),
     )
 
-    # Join the room and connect to the user
     await ctx.connect()
-
 
 if __name__ == "__main__":
     cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint, prewarm_fnc=prewarm))
