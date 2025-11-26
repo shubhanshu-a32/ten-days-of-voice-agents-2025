@@ -1,0 +1,51 @@
+{
+  "company": "Jar",
+  "description": "Jar is India's fastest growing micro-savings app that helps users save small amounts daily and invest in digital gold. We make saving as easy and habitual as your daily coffee.",
+  "products": {
+    "Daily Savings": "Save small amounts daily starting from just \u20b91",
+    "Digital Gold": "Convert your savings into 24K digital gold",
+    "Jar App": "Mobile-first platform with intuitive saving features",
+    "Auto-Save": "Set up automatic daily savings from your UPI"
+  },
+  "pricing": {
+    "Account Opening": "Completely free",
+    "Savings": "No minimum balance required",
+    "Digital Gold Purchase": "Zero commission on gold buying",
+    "Gold Storage": "Free secure storage",
+    "Withdrawal": "Small processing fee for gold redemption"
+  },
+  "faq": [
+    {
+      "question": "What is Jar?",
+      "answer": "Jar is a micro-savings app that helps you save small amounts daily and convert them into digital gold, making saving a daily habit."
+    },
+    {
+      "question": "How does Jar work?",
+      "answer": "You can save any amount starting from \u20b91 daily. Your savings are automatically converted into digital gold, which you can accumulate or redeem anytime."
+    },
+    {
+      "question": "Is there any minimum amount to start?",
+      "answer": "No, you can start saving with as little as \u20b91. There's no minimum balance requirement."
+    },
+    {
+      "question": "How much does Jar cost?",
+      "answer": "Opening an account is completely free. There are no charges for saving or storing gold. A small processing fee applies only when you redeem physical gold."
+    },
+    {
+      "question": "Is my money safe with Jar?",
+      "answer": "Yes, your digital gold is stored securely with regulated partners and is fully insured. Jar is compliant with all RBI regulations."
+    },
+    {
+      "question": "Can I withdraw my money anytime?",
+      "answer": "Yes, you can redeem your digital gold for cash or physical gold delivery anytime through the app."
+    },
+    {
+      "question": "What is digital gold?",
+      "answer": "Digital gold represents physical 24K gold that you own. Each unit in your Jar account corresponds to actual gold stored in secure vaults."
+    },
+    {
+      "question": "Do you have a mobile app?",
+      "answer": "Yes, Jar is available as a mobile app on both iOS and Android platforms."
+    }
+  ]
+}
