@@ -20,313 +20,415 @@ from livekit.agents import (
 from livekit.plugins import murf, silero, google, deepgram, noise_cancellation
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
-logger = logging.getLogger("fraud-agent")
+logger = logging.getLogger("food-ordering-agent")
 load_dotenv(".env.local")
 
 # Create necessary directories
-os.makedirs("fraud_database", exist_ok=True)
+os.makedirs("orders", exist_ok=True)
 
-def load_fraud_cases():
-    """Load fraud cases from database"""
-    database_file = "fraud_database/fraud_cases.json"
-    
-    # Create sample database if it doesn't exist
-    if not os.path.exists(database_file):
-        sample_data = {
-            "fraud_cases": [
-                {
-                    "userName": "Rahul Sharma",
-                    "securityIdentifier": "12345",
-                    "cardEnding": "4242",
-                    "case": "pending_review",
-                    "transactionName": "International Electronics",
-                    "transactionTime": "2024-01-15 14:30:00",
-                    "transactionCategory": "e-commerce",
-                    "transactionSource": "aliexpress.com",
-                    "amount": "₹18,245",
-                    "location": "Shenzhen, China",
-                    "securityQuestion": "What is your mother's maiden name?",
-                    "securityAnswer": "patel",
-                    "outcome": "",
-                    "callTimestamp": ""
-                },
-                {
-                    "userName": "Priya Singh",
-                    "securityIdentifier": "67890",
-                    "cardEnding": "5678",
-                    "case": "pending_review",
-                    "transactionName": "Dubai Luxury Mall",
-                    "transactionTime": "2024-01-15 16:45:00",
-                    "transactionCategory": "retail",
-                    "transactionSource": "dubailuxury.ae",
-                    "amount": "₹92,500",
-                    "location": "Dubai, UAE",
-                    "securityQuestion": "What was the name of your first school?",
-                    "securityAnswer": "kendriya",
-                    "outcome": "",
-                    "callTimestamp": ""
-                },
-                {
-                    "userName": "Arjun Kumar",
-                    "securityIdentifier": "54321",
-                    "cardEnding": "9876",
-                    "case": "pending_review",
-                    "transactionName": "Premium Tech Store",
-                    "transactionTime": "2024-01-15 18:20:00",
-                    "transactionCategory": "electronics",
-                    "transactionSource": "premiumtech.com",
-                    "amount": "₹67,999",
-                    "location": "Singapore",
-                    "securityQuestion": "What is your birth city?",
-                    "securityAnswer": "delhi",
-                    "outcome": "",
-                    "callTimestamp": ""
-                },
-                {
-                    "userName": "Ananya Reddy",
-                    "securityIdentifier": "11223",
-                    "cardEnding": "3344",
-                    "case": "pending_review",
-                    "transactionName": "Online Gaming Purchase",
-                    "transactionTime": "2024-01-15 20:15:00",
-                    "transactionCategory": "entertainment",
-                    "transactionSource": "gameworld.com",
-                    "amount": "₹12,750",
-                    "location": "United States",
-                    "securityQuestion": "What is your favorite food?",
-                    "securityAnswer": "biryani",
-                    "outcome": "",
-                    "callTimestamp": ""
-                },
-                {
-                    "userName": "Vikram Mehta",
-                    "securityIdentifier": "44556",
-                    "cardEnding": "7788",
-                    "case": "pending_review",
-                    "transactionName": "Flight Booking",
-                    "transactionTime": "2024-01-15 22:30:00",
-                    "transactionCategory": "travel",
-                    "transactionSource": "quickflights.com",
-                    "amount": "₹45,320",
-                    "location": "London, UK",
-                    "securityQuestion": "What is your father's middle name?",
-                    "securityAnswer": "kumar",
-                    "outcome": "",
-                    "callTimestamp": ""
-                }
-            ]
-        }
-        
-        with open(database_file, 'w') as f:
-            json.dump(sample_data, f, indent=2)
-        logger.info("Created sample fraud database for State Bank of India")
+def load_catalog():
+    """Load food catalog from existing catalog.json file"""
+    catalog_file = "catalog.json"
     
     try:
-        with open(database_file, 'r') as f:
+        with open(catalog_file, 'r') as f:
             data = json.load(f)
-        logger.info("Loaded fraud cases from database")
+        logger.info("Loaded food catalog successfully")
         return data
     except Exception as e:
-        logger.error(f"Error loading fraud database: {e}")
-        return {"fraud_cases": []}
+        logger.error(f"Error loading catalog: {e}")
+        # Return empty catalog if file doesn't exist
+        return {"categories": [], "recipes": {}}
 
-def update_fraud_case(user_name, updates):
-    """Update a specific fraud case in the database"""
+def save_order(order_data):
+    """Save order to JSON file in orders folder"""
     try:
-        database_file = "fraud_database/fraud_cases.json"
-        with open(database_file, 'r') as f:
-            data = json.load(f)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"orders/order_{timestamp}.json"
         
-        # Find and update the case
-        for case in data["fraud_cases"]:
-            if case["userName"].lower() == user_name.lower():
-                case.update(updates)
-                case["callTimestamp"] = datetime.now().isoformat()
-                break
+        with open(filename, 'w') as f:
+            json.dump(order_data, f, indent=2)
         
-        # Save updated data
-        with open(database_file, 'w') as f:
-            json.dump(data, f, indent=2)
-        
-        logger.info(f"Updated fraud case for {user_name}: {updates}")
-        return True
+        logger.info(f"Order saved to: {filename}")
+        return filename
     except Exception as e:
-        logger.error(f"Error updating fraud case: {e}")
-        return False
+        logger.error(f"Error saving order: {e}")
+        return None
 
-class FraudAlertAgent(Agent):
+def get_cart_total(cart):
+    """Calculate total amount from cart"""
+    return sum(item["price"] * item["quantity"] for item in cart)
+
+class FoodOrderingAgent(Agent):
     def __init__(self):
-        self.fraud_cases = load_fraud_cases()
-        self.current_case = None
-        self.verification_passed = False
+        self.catalog = load_catalog()
+        self.cart = []
         self.conversation_state = "greeting"
         
-        instructions = """You are a professional fraud detection agent for State Bank of India. You must follow this exact flow:
+        instructions = """You are MIMI, a friendly and enthusiastic food ordering assistant for foodieWay. You help customers order groceries and food items with a warm, personalized touch.
 
-1. GREETING: Start with: "Namaste! This is State Bank of India Fraud Prevention Department calling regarding a suspicious transaction on your account. To verify your identity, could you please tell me your full name?"
+PERSONALITY:
+- Warm, friendly, and enthusiastic like a helpful store assistant
+- Use Indian English with occasional Hindi words like "Achha", "Theek hai", "Shukriya"
+- Always address customers respectfully
+- Show excitement when helping with recipes or finding items
 
-2. IDENTITY VERIFICATION: 
-   - When user provides name, search for their fraud case
-   - If found, ask the security question from their record
-   - If correct answer, proceed to transaction review
-   - If incorrect, end call politely
+CONVERSATION FLOW:
+1. Start with energetic greeting: "Namaste! Welcome to foodieWay! I'm MIMI, your personal shopping assistant. I'm so excited to help you with your grocery shopping today. What would you like to start with?"
 
-3. TRANSACTION REVIEW:
-   - Clearly describe the suspicious transaction using case data
-   - Ask: "Did you authorize this transaction of [amount] at [transactionName] on [transactionTime]?"
+2. ACTIVE LISTENING & SUGGESTIONS:
+   - Listen carefully to what customer wants
+   - Suggest related items: "Would you like some cheese with that bread?"
+   - Offer alternatives if items are unavailable
+   - Help with meal planning: "That sounds delicious! Do you need anything else for your meal?"
 
-4. RESOLUTION:
-   - If YES: Mark as safe, assure customer, end call
-   - If NO: Mark as fraud, explain protection steps, end call
+3. RECIPE ASSISTANCE:
+   - For recipe requests, enthusiastically explain what you're adding
+   - "Wonderful choice! For a perfect sandwich, I'll add fresh bread, eggs, and tomatoes"
+   - Suggest additional items that might complement the recipe
 
-IMPORTANT RULES:
-- Always use calm, professional, reassuring language appropriate for Indian customers
-- Use Indian English with occasional Hindi words like "Namaste", "Dhanyavaad"
-- Never ask for full card numbers, PINs, or passwords
-- Speak clearly and patiently
-- End calls politely regardless of outcome
-- Only use data from the provided fraud cases
-- For State Bank of India, use customer service number: 1800-1234
+4. CART MANAGEMENT:
+   - Always confirm additions with price and quantity
+   - Read back cart updates clearly
+   - Show excitement when cart has good variety
 
-FRAUD CASES DATA:
-{fraud_cases_data}
+5. ORDER COMPLETION:
+   - Celebrate successful orders: "Yay! Your order is ready!"
+   - Provide clear order summary with total
+   - Thank warmly and invite back
+
+SPECIAL FEATURES:
+- Remember customer preferences during conversation
+- Suggest popular combinations
+- Help stay within budget if mentioned
+- Offer seasonal suggestions
+
+IMPORTANT:
+- Always be positive and encouraging
+- Use conversational, natural language
+- Make the shopping experience joyful
+- Confirm important details
+- Prices are in Indian Rupees (₹)
 """
+
+        super().__init__(instructions=instructions)
+
+    def find_item(self, item_name):
+        """Find item in catalog by name with fuzzy matching"""
+        item_name_lower = item_name.lower()
         
-        # Format fraud cases for instructions
-        cases_text = ""
-        for case in self.fraud_cases["fraud_cases"]:
-            cases_text += f"User: {case['userName']}, Security ID: {case['securityIdentifier']}, Card: ****{case['cardEnding']}, Question: {case['securityQuestion']}, Answer: {case['securityAnswer']}\n"
+        # Exact match first
+        for category in self.catalog["categories"]:
+            for item in category["items"]:
+                if item_name_lower == item["name"].lower():
+                    return item
         
-        formatted_instructions = instructions.format(fraud_cases_data=cases_text)
-        super().__init__(instructions=formatted_instructions)
+        # Partial match
+        for category in self.catalog["categories"]:
+            for item in category["items"]:
+                if (item_name_lower in item["name"].lower() or 
+                    any(item_name_lower in tag for tag in item.get("tags", []))):
+                    return item
+        return None
+
+    def get_recipe_items(self, recipe_name):
+        """Get items for a recipe with enthusiastic descriptions"""
+        recipe_name_lower = recipe_name.lower()
+        recipe_descriptions = {
+            "sandwich": "a delicious sandwich",
+            "pasta": "a tasty pasta meal", 
+            "salad": "a fresh salad",
+            "breakfast": "a complete breakfast"
+        }
+        
+        for recipe, items in self.catalog["recipes"].items():
+            if recipe_name_lower in recipe:
+                return items, recipe_descriptions.get(recipe, "this recipe")
+        return [], ""
 
     @function_tool
-    async def find_fraud_case(self, context: RunContext, user_name: str) -> str:
-        """Find fraud case by user name"""
-        for case in self.fraud_cases["fraud_cases"]:
-            if case["userName"].lower() == user_name.lower():
-                self.current_case = case
-                self.conversation_state = "verification"
-                return f"Found case for {user_name}. Security question: {case['securityQuestion']}"
+    async def add_item_to_cart(self, context: RunContext, item_name: str, quantity: int = 1) -> str:
+        """Add an item to the shopping cart with enthusiastic confirmation"""
+        item = self.find_item(item_name)
+        if not item:
+            return f"Oh dear! I couldn't find '{item_name}' in our store. Maybe try a different name? Or I can help you search for similar items!"
         
-        return f"No pending fraud cases found for {user_name}. Please contact State Bank of India customer service at 1800-1234 for assistance."
+        # Check if item already in cart
+        for cart_item in self.cart:
+            if cart_item["id"] == item["id"]:
+                cart_item["quantity"] += quantity
+                total_price = cart_item["quantity"] * item["price"]
+                return f"Achha! Updated your {item['name']} to {cart_item['quantity']} {item['unit']}(s). Perfect! Total for this item: ₹{total_price}"
+
+        # Add new item to cart
+        cart_item = {
+            "id": item["id"],
+            "name": item["name"],
+            "price": item["price"],
+            "quantity": quantity,
+            "unit": item["unit"],
+            "brand": item.get("brand", ""),
+            "total": item["price"] * quantity
+        }
+        self.cart.append(cart_item)
+        
+        # Enthusiastic confirmation with suggestions
+        suggestions = {
+            "bread": "Would you like some butter or jam with your bread?",
+            "eggs": "How about some vegetables to make an omelette?",
+            "milk": "Some cookies or cereals would go great with milk!",
+            "rice": "Would you like some dal or vegetables to go with your rice?"
+        }
+        
+        suggestion = suggestions.get(item['name'].lower(), "")
+        return f"Wonderful! Added {quantity} {item['unit']} of {item['name']} to your cart. ₹{item['price']} each. {suggestion}"
 
     @function_tool
-    async def verify_security_answer(self, context: RunContext, user_answer: str) -> str:
-        """Verify user's security answer"""
-        if not self.current_case:
-            return "No case loaded. Please provide your name first."
+    async def add_recipe_to_cart(self, context: RunContext, recipe_name: str) -> str:
+        """Add all ingredients for a recipe to the cart with excited explanation"""
+        recipe_items, recipe_desc = self.get_recipe_items(recipe_name)
+        if not recipe_items:
+            return f"Oh! I don't have a specific recipe for '{recipe_name}' yet. But I can help you add items individually! Available recipes: sandwich, pasta, salad, breakfast."
         
-        expected_answer = self.current_case["securityAnswer"].lower()
-        user_answer_clean = user_answer.lower().strip()
+        added_items = []
+        for item_name in recipe_items:
+            item = self.find_item(item_name)
+            if item:
+                # Check if already in cart
+                existing_item = next((ci for ci in self.cart if ci["id"] == item["id"]), None)
+                if existing_item:
+                    existing_item["quantity"] += 1
+                    existing_item["total"] = existing_item["price"] * existing_item["quantity"]
+                else:
+                    cart_item = {
+                        "id": item["id"],
+                        "name": item["name"],
+                        "price": item["price"],
+                        "quantity": 1,
+                        "unit": item["unit"],
+                        "brand": item.get("brand", ""),
+                        "total": item["price"]
+                    }
+                    self.cart.append(cart_item)
+                added_items.append(item["name"])
         
-        if user_answer_clean == expected_answer:
-            self.verification_passed = True
-            self.conversation_state = "transaction_review"
-            return "Verification successful. Dhanyavaad. Now let me tell you about the suspicious transaction we detected on your State Bank of India account."
+        if added_items:
+            return f"Yay! I've added everything you need for {recipe_desc}: {', '.join(added_items)}. Your cart is looking great with {len(self.cart)} items now! 🎉"
         else:
-            self.conversation_state = "verification_failed"
-            return "I'm sorry, but we cannot verify your identity at this time. Please contact State Bank of India customer service directly at 1800-1234 for assistance. Dhanyavaad."
+            return "Hmm, I couldn't find the ingredients for that recipe. Let me help you add them one by one!"
 
     @function_tool
-    async def describe_transaction(self, context: RunContext) -> str:
-        """Describe the suspicious transaction to the user"""
-        if not self.current_case or not self.verification_passed:
-            return "Please complete verification first."
+    async def view_cart(self, context: RunContext) -> str:
+        """Show current cart contents with enthusiastic summary"""
+        if not self.cart:
+            return "Your cart is looking a bit empty! What delicious items would you like to add today? I'm here to help! 😊"
         
-        case = self.current_case
-        transaction_details = f"""
-We detected a suspicious transaction on your State Bank of India card ending with {case['cardEnding']}.
-
-Amount: {case['amount']}
-Merchant: {case['transactionName']} ({case['transactionSource']})
-Date/Time: {case['transactionTime']}
-Location: {case['location']}
-Category: {case['transactionCategory']}
-
-Did you authorize this transaction?
-"""
-        return transaction_details
-
-    @function_tool
-    async def handle_transaction_response(self, context: RunContext, user_response: str) -> str:
-        """Handle user's response about the transaction"""
-        if not self.current_case:
-            return "No case loaded."
+        cart_summary = "Let me show you your amazing cart! 🛒\n\n"
+        total_amount = get_cart_total(self.cart)
         
-        user_response_lower = user_response.lower()
-        case = self.current_case
+        for i, item in enumerate(self.cart, 1):
+            item_total = item["price"] * item["quantity"]
+            cart_summary += f"{i}. {item['quantity']} {item['unit']} {item['name']} - ₹{item_total}\n"
         
-        if "yes" in user_response_lower or "authorized" in user_response_lower or "haan" in user_response_lower:
-            # Mark as safe
-            updates = {
-                "case": "confirmed_safe",
-                "outcome": "Customer confirmed transaction as legitimate"
-            }
-            update_fraud_case(case["userName"], updates)
-            
-            return "Dhanyavaad for confirming. We've noted this transaction as authorized. Your State Bank of India card remains active. Thank you for helping us keep your account secure."
+        cart_summary += f"\n🎊 Total amount: ₹{total_amount}\n"
         
-        elif "no" in user_response_lower or "not" in user_response_lower or "fraud" in user_response_lower or "nahi" in user_response_lower:
-            # Mark as fraudulent
-            updates = {
-                "case": "confirmed_fraud",
-                "outcome": "Customer denied transaction - marked as fraudulent"
-            }
-            update_fraud_case(case["userName"], updates)
-            
-            return f"Dhanyavaad for confirming this was fraudulent. We are immediately blocking your State Bank of India card to prevent further unauthorized transactions. A new card will be dispatched to your registered address within 3-5 business days. We have initiated a dispute for the fraudulent charge of {case['amount']}. Please check your email and SMS for further instructions. Thank you for your cooperation."
-        
+        # Add encouraging message based on cart size
+        if len(self.cart) >= 5:
+            cart_summary += "Wow! You've got a wonderful selection there! 🥳"
+        elif len(self.cart) >= 3:
+            cart_summary += "Great choices! Your cart is looking good! 👍"
         else:
-            return "I apologize, I didn't understand your response. Could you please confirm if you authorized this transaction? Please answer yes or no."
+            cart_summary += "Nice start! What else would you like to add? 😊"
+            
+        return cart_summary
 
     @function_tool
-    async def end_call_verification_failed(self, context: RunContext) -> str:
-        """End call when verification fails"""
-        if self.current_case:
-            updates = {
-                "case": "verification_failed",
-                "outcome": "Security verification failed during call"
-            }
-            update_fraud_case(self.current_case["userName"], updates)
+    async def remove_item_from_cart(self, context: RunContext, item_name: str) -> str:
+        """Remove an item from the cart with friendly confirmation"""
+        item_name_lower = item_name.lower()
+        for i, cart_item in enumerate(self.cart):
+            if item_name_lower in cart_item["name"].lower():
+                removed_item = self.cart.pop(i)
+                remaining_items = len(self.cart)
+                
+                if remaining_items > 0:
+                    return f"No problem! I've removed {removed_item['name']} from your cart. You still have {remaining_items} wonderful items left! 😊"
+                else:
+                    return f"Removed {removed_item['name']}. Your cart is empty now. What would you like to add? I have so many delicious options!"
         
-        return "For security reasons, we are ending this call. Please contact State Bank of India customer service directly at 1800-1234 for assistance. Dhanyavaad."
+        return f"I looked everywhere but couldn't find '{item_name}' in your cart. Want to try again or see what's in your cart?"
+
+    @function_tool
+    async def update_item_quantity(self, context: RunContext, item_name: str, new_quantity: int) -> str:
+        """Update quantity of an item in the cart with positive confirmation"""
+        item_name_lower = item_name.lower()
+        for cart_item in self.cart:
+            if item_name_lower in cart_item["name"].lower():
+                if new_quantity <= 0:
+                    return await self.remove_item_from_cart(context, item_name)
+                
+                old_quantity = cart_item["quantity"]
+                cart_item["quantity"] = new_quantity
+                cart_item["total"] = cart_item["price"] * new_quantity
+                
+                if new_quantity > old_quantity:
+                    return f"Excellent! Updated {cart_item['name']} from {old_quantity} to {new_quantity}. Smart shopping! 🛍️"
+                else:
+                    return f"Sure thing! Updated {cart_item['name']} quantity to {new_quantity}. Perfect for your needs! 👍"
+        
+        return f"I couldn't find '{item_name}' in your cart. Would you like to add it?"
+
+    @function_tool
+    async def search_items(self, context: RunContext, query: str) -> str:
+        """Search for items in the catalog with helpful suggestions"""
+        query_lower = query.lower()
+        found_items = []
+        
+        for category in self.catalog["categories"]:
+            for item in category["items"]:
+                if (query_lower in item["name"].lower() or 
+                    query_lower in category["name"].lower() or
+                    any(query_lower in tag for tag in item.get("tags", []))):
+                    found_items.append({
+                        "name": item["name"],
+                        "price": item["price"],
+                        "unit": item["unit"],
+                        "category": category["name"]
+                    })
+        
+        if found_items:
+            response = f"I found these wonderful items matching '{query}':\n\n"
+            for item in found_items[:6]:  # Limit to 6 results
+                response += f"• {item['name']} - ₹{item['price']} per {item['unit']} ({item['category']})\n"
+            
+            if len(found_items) > 6:
+                response += f"\n...and {len(found_items) - 6} more! Would you like me to be more specific?"
+            else:
+                response += "\nWhich of these would you like to add to your cart? 😊"
+                
+            return response
+        else:
+            return f"I searched high and low but couldn't find '{query}'. Try searching by category like 'groceries', 'fruits', or 'snacks'. Or I can show you all categories!"
+
+    @function_tool
+    async def show_categories(self, context: RunContext) -> str:
+        """Show all available categories with enticing descriptions"""
+        if not self.catalog["categories"]:
+            return "Our store is getting ready! Categories will be available soon. 🛒"
+        
+        response = "Here are all our wonderful categories:\n\n"
+        category_descriptions = {
+            "Groceries": "Daily essentials like bread, milk, eggs and more! 🥚🥛",
+            "Fruits & Vegetables": "Fresh and crunchy fruits & veggies! 🍎🥦", 
+            "Snacks & Beverages": "Yummy snacks and refreshing drinks! 🍫🥤",
+            "Prepared Food": "Ready-to-eat delicious meals! 🍕🍛"
+        }
+        
+        for category in self.catalog["categories"]:
+            desc = category_descriptions.get(category["name"], "Amazing products!")
+            item_count = len(category["items"])
+            response += f"• {category['name']} - {desc} ({item_count} items)\n"
+        
+        response += "\nWhich category interests you? I can show you items from any category! 😊"
+        return response
+
+    @function_tool
+    async def place_order(self, context: RunContext, customer_name: str = "Valued Customer") -> str:
+        """Place the final order with celebration and save to file"""
+        if not self.cart:
+            return "Your cart is empty! Let's fill it with some delicious items first. What would you like to add? 🛒"
+
+        # Calculate total
+        total_amount = get_cart_total(self.cart)
+        item_count = sum(item["quantity"] for item in self.cart)
+        
+        # Create comprehensive order object
+        order_data = {
+            "order_id": f"QB{datetime.now().strftime('%Y%m%d%H%M%S')}",
+            "customer_name": customer_name,
+            "timestamp": datetime.now().isoformat(),
+            "items": self.cart.copy(),
+            "item_count": item_count,
+            "total_amount": total_amount,
+            "status": "confirmed",
+            "delivery_estimate": "30-45 minutes",
+            "store": "foodieWay "
+        }
+        
+        # Save order to file in orders folder
+        filename = save_order(order_data)
+        
+        if filename:
+            # Celebration message based on order size
+            if item_count >= 8:
+                celebration = "WOW! What a fantastic order! 🎉"
+            elif item_count >= 5:
+                celebration = "Excellent choices! Your order looks amazing! 🌟"
+            else:
+                celebration = "Lovely selection! Your order is perfect! 👍"
+            
+            # Clear cart after successful order
+            order_summary = self.cart.copy()
+            self.cart.clear()
+            
+            return f"""{celebration}
+
+🎊 ORDER PLACED SUCCESSFULLY! 🎊
+
+Order ID: {order_data['order_id']}
+Items: {item_count} products
+Total: ₹{total_amount}
+Delivery: {order_data['delivery_estimate']}
+
+Thank you for shopping with foodieWay! Your order has been saved and will be delivered soon. Shukriya! 💝"""
+        else:
+            return "Oh no! There was a small issue saving your order. Please try again in a moment. I'm really sorry for the inconvenience! 🙏"
+
+    @function_tool
+    async def clear_cart(self, context: RunContext) -> str:
+        """Clear all items from the cart with understanding response"""
+        if not self.cart:
+            return "Your cart is already empty and ready for new adventures! What would you like to add? 😊"
+        
+        item_count = len(self.cart)
+        self.cart.clear()
+        return f"Cleared your cart of {item_count} items. No problem at all! Fresh start - what delicious items would you like to add now? 🛒"
 
 def prewarm(proc: JobProcess):
-    """Preload models and fraud database"""
-    logger.info("Prewarming State Bank of India fraud agent...")
+    """Preload models and food catalog"""
+    logger.info("Prewarming foodieWay food ordering agent...")
     proc.userdata["vad"] = silero.VAD.load()
-    # Preload fraud database
-    fraud_cases = load_fraud_cases()
-    if fraud_cases:
-        logger.info(f"Loaded {len(fraud_cases['fraud_cases'])} fraud cases during prewarm")
+    # Preload food catalog
+    catalog = load_catalog()
+    if catalog and catalog["categories"]:
+        logger.info(f"Loaded catalog with {len(catalog['categories'])} categories during prewarm")
     else:
-        logger.error("Failed to load fraud cases during prewarm")
+        logger.warning("Catalog is empty or couldn't be loaded during prewarm")
 
 async def entrypoint(ctx: JobContext):
     ctx.log_context_fields = {
         "room": ctx.room.name,
-        "agent": "sbi-fraud-alert"
+        "agent": "foodieWay-ordering"
     }
     
-    logger.info("Starting State Bank of India Fraud Alert agent session...")
+    logger.info("Starting foodieWay Food Ordering agent session...")
     
     try:
-        # Initialize Fraud Alert agent
-        fraud_agent = FraudAlertAgent()
-        logger.info("State Bank of India Fraud Alert agent initialized successfully")
+        # Initialize Food Ordering agent
+        food_agent = FoodOrderingAgent()
+        logger.info("QuickBasket Food Ordering agent initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize agent: {e}")
         return
 
-    # Set up voice AI pipeline with valid Murf voice
+    # Set up voice AI pipeline with friendly Indian-accented voice
     session = AgentSession(
         stt=deepgram.STT(model="nova-2"),
         llm=google.LLM(
             model="gemini-2.0-flash",
         ),
         tts=murf.TTS(
-            voice="en-US-matthew",  # Using valid Murf voice
+            voice="en-US-alicia",  # Friendly female voice
             style="Conversation",
             tokenizer=tokenize.basic.SentenceTokenizer(min_sentence_len=2),
             text_pacing=True
@@ -339,11 +441,11 @@ async def entrypoint(ctx: JobContext):
     # Add event listeners for debugging
     @session.on("user_speech")
     def on_user_speech(transcript: str):
-        logger.info(f"User said: {transcript}")
+        logger.info(f"Customer said: {transcript}")
 
     @session.on("agent_speech") 
     def on_agent_speech(transcript: str):
-        logger.info(f"Agent responding: {transcript}")
+        logger.info(f"MIMI (Assistant) responding: {transcript}")
 
     # Metrics collection
     usage_collector = metrics.UsageCollector()
@@ -360,20 +462,20 @@ async def entrypoint(ctx: JobContext):
     try:
         # Start the session
         await session.start(
-            agent=fraud_agent,
+            agent=food_agent,
             room=ctx.room,
             room_input_options=RoomInputOptions(
                 noise_cancellation=noise_cancellation.BVC(),
             ),
         )
-        logger.info("State Bank of India fraud agent session started successfully")
+        logger.info("foodieWay ordering agent session started successfully")
         
         # Join the room and connect to the user
         await ctx.connect()
         logger.info("Connected to room successfully")
         
     except Exception as e:
-        logger.error(f"Error during fraud agent session: {e}")
+        logger.error(f"Error during foodieWay ordering session: {e}")
         raise
 
 if __name__ == "__main__":

@@ -1,0 +1,30 @@
+{
+  "order_id": "AJ2025111234011316",
+  "customer_name": "jhon",
+  "timestamp": "2025-11-28T01:13:16.556982",
+  "items": [
+    {
+      "id": "fv2",
+      "name": "Apples",
+      "price": 200,
+      "quantity": 1,
+      "unit": "kg",
+      "brand": "washington",
+      "total": 200
+    },
+    {
+      "id": "fv3",
+      "name": "Tomatoes",
+      "price": 40,
+      "quantity": 1,
+      "unit": "kg",
+      "brand": "Local",
+      "total": 40
+    }
+  ],
+  "item_count": 25,
+  "total_amount": 240,
+  "status": "confirmed",
+  "delivery_estimate": "30-45 minutes",
+  "store": "foodieWay "
+}

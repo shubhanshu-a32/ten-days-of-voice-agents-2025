@@ -1,0 +1,174 @@
+{
+  "categories": [
+    {
+      "name": "Groceries",
+      "items": [
+        {
+          "id": "g1",
+          "name": "Whole Wheat Bread",
+          "price": 45,
+          "unit": "pack",
+          "tags": ["vegan", "healthy"],
+          "brand": "Modern Bakery"
+        },
+        {
+          "id": "g2",
+          "name": "Brown Eggs",
+          "price": 80,
+          "unit": "dozen",
+          "tags": ["fresh", "protein"],
+          "brand": "Farm Fresh"
+        },
+        {
+          "id": "g3",
+          "name": "Amul Milk",
+          "price": 60,
+          "unit": "liter",
+          "tags": ["dairy", "fresh"],
+          "brand": "Amul"
+        },
+        {
+          "id": "g4",
+          "name": "Basmati Rice",
+          "price": 120,
+          "unit": "kg",
+          "tags": ["staple", "premium"],
+          "brand": "India Gate"
+        },
+        {
+          "id": "g5",
+          "name": "Toor Dal",
+          "price": 180,
+          "unit": "kg",
+          "tags": ["protein", "staple"],
+          "brand": "Tata Sampann"
+        }
+      ]
+    },
+    {
+      "name": "Fruits & Vegetables",
+      "items": [
+        {
+          "id": "fv1",
+          "name": "Bananas",
+          "price": 60,
+          "unit": "dozen",
+          "tags": ["fresh", "healthy"],
+          "brand": "Local"
+        },
+        {
+          "id": "fv2",
+          "name": "Apples",
+          "price": 200,
+          "unit": "kg",
+          "tags": ["fresh", "imported"],
+          "brand": "Washington"
+        },
+        {
+          "id": "fv3",
+          "name": "Tomatoes",
+          "price": 40,
+          "unit": "kg",
+          "tags": ["fresh", "local"],
+          "brand": "Local"
+        },
+        {
+          "id": "fv4",
+          "name": "Onions",
+          "price": 30,
+          "unit": "kg",
+          "tags": ["staple", "local"],
+          "brand": "Local"
+        },
+        {
+          "id": "fv5",
+          "name": "Potatoes",
+          "price": 25,
+          "unit": "kg",
+          "tags": ["staple", "local"],
+          "brand": "Local"
+        }
+      ]
+    },
+    {
+      "name": "Snacks & Beverages",
+      "items": [
+        {
+          "id": "sb1",
+          "name": "Lays Chips",
+          "price": 20,
+          "unit": "pack",
+          "tags": ["snack", "popular"],
+          "brand": "Lays"
+        },
+        {
+          "id": "sb2",
+          "name": "Biscuits",
+          "price": 35,
+          "unit": "pack",
+          "tags": ["snack", "sweet"],
+          "brand": "Parle-G"
+        },
+        {
+          "id": "sb3",
+          "name": "Coca Cola",
+          "price": 50,
+          "unit": "bottle",
+          "tags": ["beverage", "cold"],
+          "brand": "Coca Cola"
+        },
+        {
+          "id": "sb4",
+          "name": "Mineral Water",
+          "price": 20,
+          "unit": "bottle",
+          "tags": ["beverage", "essential"],
+          "brand": "Bisleri"
+        }
+      ]
+    },
+    {
+      "name": "Prepared Food",
+      "items": [
+        {
+          "id": "pf1",
+          "name": "Vegetable Pizza",
+          "price": 299,
+          "unit": "medium",
+          "tags": ["ready-to-eat", "vegetarian"],
+          "brand": "Pizza Corner"
+        },
+        {
+          "id": "pf2",
+          "name": "Chicken Sandwich",
+          "price": 150,
+          "unit": "piece",
+          "tags": ["ready-to-eat", "non-veg"],
+          "brand": "Sandwich World"
+        },
+        {
+          "id": "pf3",
+          "name": "Paneer Butter Masala",
+          "price": 280,
+          "unit": "serving",
+          "tags": ["ready-to-eat", "vegetarian"],
+          "brand": "Curry House"
+        },
+        {
+          "id": "pf4",
+          "name": "Chicken Biryani",
+          "price": 320,
+          "unit": "serving",
+          "tags": ["ready-to-eat", "non-veg"],
+          "brand": "Biryani Special"
+        }
+      ]
+    }
+  ],
+  "recipes": {
+    "sandwich": ["Whole Wheat Bread", "Brown Eggs", "Tomatoes"],
+    "pasta": ["Basmati Rice", "Tomatoes", "Onions"],
+    "salad": ["Tomatoes", "Onions", "Potatoes"],
+    "breakfast": ["Whole Wheat Bread", "Brown Eggs", "Amul Milk", "Bananas"]
+  }
+}
