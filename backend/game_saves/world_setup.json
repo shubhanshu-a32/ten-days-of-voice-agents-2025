@@ -1,0 +1,66 @@
+{
+  "game": "Nexus Station Mystery",
+  "description": "A thrilling sci-fi mystery aboard Nexus Station where you investigate a blackout, decode encrypted messages, and uncover conspiracies guided by ARIA, the AI Commander.",
+  "locations": {
+    "docking_bay": {
+      "name": "Main Docking Bay Alpha",
+      "description": "A massive hangar with spacecraft in various states of repair. Emergency lights cast an eerie red glow across the metallic surfaces.",
+      "connections": [
+        "command_deck",
+        "engineering",
+        "habitat_ring"
+      ],
+      "ambience": "The hum of life support systems echoes through the chamber, punctuated by distant mechanical groans"
+    },
+    "command_deck": {
+      "name": "Central Command Bridge",
+      "description": "A panoramic view of stars surrounds you. Holographic displays flicker with warning signals and corrupted data streams.",
+      "connections": [
+        "docking_bay",
+        "comms_array",
+        "medical_bay"
+      ],
+      "ambience": "Alert klaxons pulse softly, and you hear the crackle of damaged communication systems"
+    },
+    "engineering": {
+      "name": "Core Engineering Bay",
+      "description": "A labyrinth of glowing conduits and massive reactor cores. Sparks fly from damaged panels.",
+      "connections": [
+        "docking_bay",
+        "power_core"
+      ],
+      "ambience": "The deep thrum of the fusion reactor reverberates through your bones, steam hisses from broken pipes"
+    },
+    "habitat_ring": {
+      "name": "Residential Habitat Ring",
+      "description": "Curved corridors lined with crew quarters. Personal effects float in zero-gravity pockets where artificial gravity failed.",
+      "connections": [
+        "docking_bay",
+        "observation_deck",
+        "mess_hall"
+      ],
+      "ambience": "You hear muffled crying from sealed quarters and the whisper of recycled air through vents"
+    }
+  },
+  "npcs": {
+    "engineer": {
+      "name": "Chief Engineer Kato",
+      "location": "engineering",
+      "dialogue": "The blackout wasn't an accident. Someone sabotaged the quantum stabilizers. Find the encrypted logs in the power core.",
+      "personality": "Paranoid but brilliant engineer"
+    },
+    "scientist": {
+      "name": "Dr. Yuki Chen",
+      "location": "medical_bay",
+      "dialogue": "Three crew members exhibited strange neural patterns before the incident. Their memories were wiped. This goes deeper than a simple malfunction.",
+      "personality": "Analytical and cautious medical researcher"
+    }
+  },
+  "quests": {
+    "solve_blackout": {
+      "name": "Investigate the Blackout",
+      "description": "Uncover the truth behind the mysterious station-wide blackout and prevent catastrophe",
+      "status": "active"
+    }
+  }
+}

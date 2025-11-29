@@ -1,0 +1,23 @@
+{
+  "player": {
+    "name": "Detective Commander",
+    "health": 100,
+    "trust_level": 72,
+    "inventory": [
+      "Multi-tool",
+      "Data Pad",
+      "Security Clearance Card"
+    ],
+    "location": "docking_bay",
+    "credits": 1000,
+    "clues_found": 0
+  },
+  "events": {
+    "met_engineer": false,
+    "accessed_logs": false,
+    "decoded_message": false,
+    "crew_interviewed": 2
+  },
+  "conversation_summary": "\ud83d\ude80 Mission Debrief:\n\n\ud83d\udd10 Final Trust Level: 72\n\ud83d\udd0d Clues Discovered: 0\n\ud83d\udc65 Crew Interviewed: 2\n\nSolid investigation, Commander. The mystery is partially solved, but shadows remain. The station's safer, but vigilance is required.\n\nThank you for serving aboard Nexus Station, Commander. Your dedication to uncovering the truth is commendable. Stay vigilant out there!",
+  "timestamp": "2025-11-29T18:27:45.267829"
+}

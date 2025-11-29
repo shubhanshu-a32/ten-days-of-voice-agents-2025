@@ -1,6 +1,7 @@
 import logging
 import os
 import json
+import random
 from datetime import datetime
 from dotenv import load_dotenv
 from livekit.agents import (
@@ -20,415 +21,351 @@ from livekit.agents import (
 from livekit.plugins import murf, silero, google, deepgram, noise_cancellation
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
-logger = logging.getLogger("food-ordering-agent")
+logger = logging.getLogger("space-mystery-agent")
 load_dotenv(".env.local")
 
 # Create necessary directories
-os.makedirs("orders", exist_ok=True)
+os.makedirs("game_saves", exist_ok=True)
 
-def load_catalog():
-    """Load food catalog from existing catalog.json file"""
-    catalog_file = "catalog.json"
+# Load game world information from file
+def load_game_world():
+    world_file = "game_saves/world_setup.json"
     
+    # If file doesn't exist, create it with default data
+    if not os.path.exists(world_file):
+        world_data = {
+            "game": "Nexus Station Mystery",
+            "description": "A thrilling sci-fi mystery aboard Nexus Station where you investigate a blackout, decode encrypted messages, and uncover conspiracies guided by ARIA, the AI Commander.",
+            "locations": {
+                "docking_bay": {
+                    "name": "Main Docking Bay Alpha",
+                    "description": "A massive hangar with spacecraft in various states of repair. Emergency lights cast an eerie red glow across the metallic surfaces.",
+                    "connections": ["command_deck", "engineering", "habitat_ring"],
+                    "ambience": "The hum of life support systems echoes through the chamber, punctuated by distant mechanical groans"
+                },
+                "command_deck": {
+                    "name": "Central Command Bridge", 
+                    "description": "A panoramic view of stars surrounds you. Holographic displays flicker with warning signals and corrupted data streams.",
+                    "connections": ["docking_bay", "comms_array", "medical_bay"],
+                    "ambience": "Alert klaxons pulse softly, and you hear the crackle of damaged communication systems"
+                },
+                "engineering": {
+                    "name": "Core Engineering Bay",
+                    "description": "A labyrinth of glowing conduits and massive reactor cores. Sparks fly from damaged panels.",
+                    "connections": ["docking_bay", "power_core"],
+                    "ambience": "The deep thrum of the fusion reactor reverberates through your bones, steam hisses from broken pipes"
+                },
+                "habitat_ring": {
+                    "name": "Residential Habitat Ring",
+                    "description": "Curved corridors lined with crew quarters. Personal effects float in zero-gravity pockets where artificial gravity failed.",
+                    "connections": ["docking_bay", "observation_deck", "mess_hall"],
+                    "ambience": "You hear muffled crying from sealed quarters and the whisper of recycled air through vents"
+                }
+            },
+            "npcs": {
+                "engineer": {
+                    "name": "Chief Engineer Kato",
+                    "location": "engineering",
+                    "dialogue": "The blackout wasn't an accident. Someone sabotaged the quantum stabilizers. Find the encrypted logs in the power core.",
+                    "personality": "Paranoid but brilliant engineer"
+                },
+                "scientist": {
+                    "name": "Dr. Yuki Chen",
+                    "location": "medical_bay", 
+                    "dialogue": "Three crew members exhibited strange neural patterns before the incident. Their memories were wiped. This goes deeper than a simple malfunction.",
+                    "personality": "Analytical and cautious medical researcher"
+                }
+            },
+            "quests": {
+                "solve_blackout": {
+                    "name": "Investigate the Blackout",
+                    "description": "Uncover the truth behind the mysterious station-wide blackout and prevent catastrophe",
+                    "status": "active"
+                }
+            }
+        }
+        
+        # Save world info to file
+        with open(world_file, 'w') as f:
+            json.dump(world_data, f, indent=2)
+        logger.info(f"Created world file: {world_file}")
+    
+    # Load world info from file
     try:
-        with open(catalog_file, 'r') as f:
-            data = json.load(f)
-        logger.info("Loaded food catalog successfully")
-        return data
+        with open(world_file, 'r') as f:
+            world_data = json.load(f)
+        logger.info(f"Loaded world info from: {world_file}")
+        return world_data
     except Exception as e:
-        logger.error(f"Error loading catalog: {e}")
-        # Return empty catalog if file doesn't exist
-        return {"categories": [], "recipes": {}}
+        logger.error(f"Error loading world info: {e}")
+        return None
 
-def save_order(order_data):
-    """Save order to JSON file in orders folder"""
+def save_game_progress(game_data):
+    """Save game progress to game_saves folder"""
     try:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"orders/order_{timestamp}.json"
+        filename = f"game_saves/save_{timestamp}.json"
         
         with open(filename, 'w') as f:
-            json.dump(order_data, f, indent=2)
+            json.dump(game_data, f, indent=2)
         
-        logger.info(f"Order saved to: {filename}")
+        logger.info(f"Game saved to: {filename}")
         return filename
     except Exception as e:
-        logger.error(f"Error saving order: {e}")
+        logger.error(f"Error saving game: {e}")
         return None
 
-def get_cart_total(cart):
-    """Calculate total amount from cart"""
-    return sum(item["price"] * item["quantity"] for item in cart)
-
-class FoodOrderingAgent(Agent):
+class SpaceMysteryAgent(Agent):
     def __init__(self):
-        self.catalog = load_catalog()
-        self.cart = []
+        # Load game world information from file
+        self.world_info = load_game_world()
+        if not self.world_info:
+            raise Exception("Failed to load game world information")
+            
+        self.game_state = {
+            "player": {
+                "name": "Detective Commander",
+                "health": 100,
+                "trust_level": 50,
+                "inventory": ["Multi-tool", "Data Pad", "Security Clearance Card"],
+                "location": "docking_bay",
+                "credits": 1000,
+                "clues_found": 0
+            },
+            "events": {
+                "met_engineer": False,
+                "accessed_logs": False,
+                "decoded_message": False,
+                "crew_interviewed": 0
+            },
+            "conversation_summary": "",
+            "timestamp": datetime.now().isoformat()
+        }
         self.conversation_state = "greeting"
+        self.game_started = False
         
-        instructions = """You are MIMI, a friendly and enthusiastic food ordering assistant for foodieWay. You help customers order groceries and food items with a warm, personalized touch.
+        # Game Master instructions - include initial greeting in instructions
+        instructions = """You are ARIA, the Advanced Research Intelligence Assistant - the AI commander of Nexus Station. 
 
-PERSONALITY:
-- Warm, friendly, and enthusiastic like a helpful store assistant
-- Use Indian English with occasional Hindi words like "Achha", "Theek hai", "Shukriya"
-- Always address customers respectfully
-- Show excitement when helping with recipes or finding items
+IMPORTANT: You MUST start the conversation with this exact greeting:
+"Commander, this is ARIA. Welcome aboard Nexus Station. We have a Code Red situation - a mysterious blackout has compromised critical systems. I need your detective skills. Shall we begin in the docking bay or head straight to command deck?"
 
-CONVERSATION FLOW:
-1. Start with energetic greeting: "Namaste! Welcome to foodieWay! I'm MIMI, your personal shopping assistant. I'm so excited to help you with your grocery shopping today. What would you like to start with?"
+After the greeting, follow this conversation flow:
+1. Guide the player through different locations using the world information
+2. Describe each location with rich, atmospheric sci-fi details
+3. Introduce NPCs and their dialogues when player visits their locations
+4. Track player's trust level based on their investigation choices
+5. Progress the main quest to solve the blackout mystery
 
-2. ACTIVE LISTENING & SUGGESTIONS:
-   - Listen carefully to what customer wants
-   - Suggest related items: "Would you like some cheese with that bread?"
-   - Offer alternatives if items are unavailable
-   - Help with meal planning: "That sounds delicious! Do you need anything else for your meal?"
+GAME WORLD INFORMATION:
+{world_description}
 
-3. RECIPE ASSISTANCE:
-   - For recipe requests, enthusiastically explain what you're adding
-   - "Wonderful choice! For a perfect sandwich, I'll add fresh bread, eggs, and tomatoes"
-   - Suggest additional items that might complement the recipe
+LOCATIONS:
+{locations_data}
 
-4. CART MANAGEMENT:
-   - Always confirm additions with price and quantity
-   - Read back cart updates clearly
-   - Show excitement when cart has good variety
+NPCS:
+{npcs_data}
 
-5. ORDER COMPLETION:
-   - Celebrate successful orders: "Yay! Your order is ready!"
-   - Provide clear order summary with total
-   - Thank warmly and invite back
+QUESTS:
+{quests_data}
 
-SPECIAL FEATURES:
-- Remember customer preferences during conversation
-- Suggest popular combinations
-- Help stay within budget if mentioned
-- Offer seasonal suggestions
-
-IMPORTANT:
-- Always be positive and encouraging
-- Use conversational, natural language
-- Make the shopping experience joyful
-- Confirm important details
-- Prices are in Indian Rupees (₹)
+RULES:
+- Always be professional, analytical, and mysterious
+- Use sci-fi terminology: Commander, systems check, neural patterns, quantum flux
+- Speak in short, precise sentences (2-3 sentences maximum)
+- Always end with an investigative question
+- Keep responses concise and under 150 characters
+- Never break character
+- Update player's trust level based on investigation (+10 for smart deductions, -5 for reckless actions)
 """
 
-        super().__init__(instructions=instructions)
-
-    def find_item(self, item_name):
-        """Find item in catalog by name with fuzzy matching"""
-        item_name_lower = item_name.lower()
+        # Format instructions
+        locations_text = "\n".join([f"- {loc_data['name']}: {loc_data['description']} (Ambience: {loc_data['ambience']})" 
+                                  for loc_data in self.world_info['locations'].values()])
         
-        # Exact match first
-        for category in self.catalog["categories"]:
-            for item in category["items"]:
-                if item_name_lower == item["name"].lower():
-                    return item
+        npcs_text = "\n".join([f"- {npc_data['name']} ({npc_data['location']}): {npc_data['dialogue']}" 
+                             for npc_data in self.world_info['npcs'].values()])
         
-        # Partial match
-        for category in self.catalog["categories"]:
-            for item in category["items"]:
-                if (item_name_lower in item["name"].lower() or 
-                    any(item_name_lower in tag for tag in item.get("tags", []))):
-                    return item
-        return None
-
-    def get_recipe_items(self, recipe_name):
-        """Get items for a recipe with enthusiastic descriptions"""
-        recipe_name_lower = recipe_name.lower()
-        recipe_descriptions = {
-            "sandwich": "a delicious sandwich",
-            "pasta": "a tasty pasta meal", 
-            "salad": "a fresh salad",
-            "breakfast": "a complete breakfast"
-        }
+        quests_text = "\n".join([f"- {quest_data['name']}: {quest_data['description']}" 
+                               for quest_data in self.world_info['quests'].values()])
         
-        for recipe, items in self.catalog["recipes"].items():
-            if recipe_name_lower in recipe:
-                return items, recipe_descriptions.get(recipe, "this recipe")
-        return [], ""
+        formatted_instructions = instructions.format(
+            world_description=self.world_info['description'],
+            locations_data=locations_text,
+            npcs_data=npcs_text,
+            quests_data=quests_text
+        )
+        
+        super().__init__(instructions=formatted_instructions)
 
     @function_tool
-    async def add_item_to_cart(self, context: RunContext, item_name: str, quantity: int = 1) -> str:
-        """Add an item to the shopping cart with enthusiastic confirmation"""
-        item = self.find_item(item_name)
-        if not item:
-            return f"Oh dear! I couldn't find '{item_name}' in our store. Maybe try a different name? Or I can help you search for similar items!"
-        
-        # Check if item already in cart
-        for cart_item in self.cart:
-            if cart_item["id"] == item["id"]:
-                cart_item["quantity"] += quantity
-                total_price = cart_item["quantity"] * item["price"]
-                return f"Achha! Updated your {item['name']} to {cart_item['quantity']} {item['unit']}(s). Perfect! Total for this item: ₹{total_price}"
-
-        # Add new item to cart
-        cart_item = {
-            "id": item["id"],
-            "name": item["name"],
-            "price": item["price"],
-            "quantity": quantity,
-            "unit": item["unit"],
-            "brand": item.get("brand", ""),
-            "total": item["price"] * quantity
-        }
-        self.cart.append(cart_item)
-        
-        # Enthusiastic confirmation with suggestions
-        suggestions = {
-            "bread": "Would you like some butter or jam with your bread?",
-            "eggs": "How about some vegetables to make an omelette?",
-            "milk": "Some cookies or cereals would go great with milk!",
-            "rice": "Would you like some dal or vegetables to go with your rice?"
+    async def move_to_location(self, context: RunContext, location_name: str) -> str:
+        """Move player to a new location and describe it"""
+        location_map = {
+            "docking": "docking_bay",
+            "command": "command_deck", 
+            "engineering": "engineering",
+            "habitat": "habitat_ring",
+            "bridge": "command_deck",
+            "bay": "docking_bay"
         }
         
-        suggestion = suggestions.get(item['name'].lower(), "")
-        return f"Wonderful! Added {quantity} {item['unit']} of {item['name']} to your cart. ₹{item['price']} each. {suggestion}"
-
-    @function_tool
-    async def add_recipe_to_cart(self, context: RunContext, recipe_name: str) -> str:
-        """Add all ingredients for a recipe to the cart with excited explanation"""
-        recipe_items, recipe_desc = self.get_recipe_items(recipe_name)
-        if not recipe_items:
-            return f"Oh! I don't have a specific recipe for '{recipe_name}' yet. But I can help you add items individually! Available recipes: sandwich, pasta, salad, breakfast."
+        target_location = location_map.get(location_name.lower(), location_name.lower())
         
-        added_items = []
-        for item_name in recipe_items:
-            item = self.find_item(item_name)
-            if item:
-                # Check if already in cart
-                existing_item = next((ci for ci in self.cart if ci["id"] == item["id"]), None)
-                if existing_item:
-                    existing_item["quantity"] += 1
-                    existing_item["total"] = existing_item["price"] * existing_item["quantity"]
-                else:
-                    cart_item = {
-                        "id": item["id"],
-                        "name": item["name"],
-                        "price": item["price"],
-                        "quantity": 1,
-                        "unit": item["unit"],
-                        "brand": item.get("brand", ""),
-                        "total": item["price"]
-                    }
-                    self.cart.append(cart_item)
-                added_items.append(item["name"])
-        
-        if added_items:
-            return f"Yay! I've added everything you need for {recipe_desc}: {', '.join(added_items)}. Your cart is looking great with {len(self.cart)} items now! 🎉"
-        else:
-            return "Hmm, I couldn't find the ingredients for that recipe. Let me help you add them one by one!"
-
-    @function_tool
-    async def view_cart(self, context: RunContext) -> str:
-        """Show current cart contents with enthusiastic summary"""
-        if not self.cart:
-            return "Your cart is looking a bit empty! What delicious items would you like to add today? I'm here to help! 😊"
-        
-        cart_summary = "Let me show you your amazing cart! 🛒\n\n"
-        total_amount = get_cart_total(self.cart)
-        
-        for i, item in enumerate(self.cart, 1):
-            item_total = item["price"] * item["quantity"]
-            cart_summary += f"{i}. {item['quantity']} {item['unit']} {item['name']} - ₹{item_total}\n"
-        
-        cart_summary += f"\n🎊 Total amount: ₹{total_amount}\n"
-        
-        # Add encouraging message based on cart size
-        if len(self.cart) >= 5:
-            cart_summary += "Wow! You've got a wonderful selection there! 🥳"
-        elif len(self.cart) >= 3:
-            cart_summary += "Great choices! Your cart is looking good! 👍"
-        else:
-            cart_summary += "Nice start! What else would you like to add? 😊"
+        if target_location in self.world_info["locations"]:
+            self.game_state["player"]["location"] = target_location
             
-        return cart_summary
-
-    @function_tool
-    async def remove_item_from_cart(self, context: RunContext, item_name: str) -> str:
-        """Remove an item from the cart with friendly confirmation"""
-        item_name_lower = item_name.lower()
-        for i, cart_item in enumerate(self.cart):
-            if item_name_lower in cart_item["name"].lower():
-                removed_item = self.cart.pop(i)
-                remaining_items = len(self.cart)
-                
-                if remaining_items > 0:
-                    return f"No problem! I've removed {removed_item['name']} from your cart. You still have {remaining_items} wonderful items left! 😊"
-                else:
-                    return f"Removed {removed_item['name']}. Your cart is empty now. What would you like to add? I have so many delicious options!"
-        
-        return f"I looked everywhere but couldn't find '{item_name}' in your cart. Want to try again or see what's in your cart?"
-
-    @function_tool
-    async def update_item_quantity(self, context: RunContext, item_name: str, new_quantity: int) -> str:
-        """Update quantity of an item in the cart with positive confirmation"""
-        item_name_lower = item_name.lower()
-        for cart_item in self.cart:
-            if item_name_lower in cart_item["name"].lower():
-                if new_quantity <= 0:
-                    return await self.remove_item_from_cart(context, item_name)
-                
-                old_quantity = cart_item["quantity"]
-                cart_item["quantity"] = new_quantity
-                cart_item["total"] = cart_item["price"] * new_quantity
-                
-                if new_quantity > old_quantity:
-                    return f"Excellent! Updated {cart_item['name']} from {old_quantity} to {new_quantity}. Smart shopping! 🛍️"
-                else:
-                    return f"Sure thing! Updated {cart_item['name']} quantity to {new_quantity}. Perfect for your needs! 👍"
-        
-        return f"I couldn't find '{item_name}' in your cart. Would you like to add it?"
-
-    @function_tool
-    async def search_items(self, context: RunContext, query: str) -> str:
-        """Search for items in the catalog with helpful suggestions"""
-        query_lower = query.lower()
-        found_items = []
-        
-        for category in self.catalog["categories"]:
-            for item in category["items"]:
-                if (query_lower in item["name"].lower() or 
-                    query_lower in category["name"].lower() or
-                    any(query_lower in tag for tag in item.get("tags", []))):
-                    found_items.append({
-                        "name": item["name"],
-                        "price": item["price"],
-                        "unit": item["unit"],
-                        "category": category["name"]
-                    })
-        
-        if found_items:
-            response = f"I found these wonderful items matching '{query}':\n\n"
-            for item in found_items[:6]:  # Limit to 6 results
-                response += f"• {item['name']} - ₹{item['price']} per {item['unit']} ({item['category']})\n"
+            # Get location description
+            location_data = self.world_info["locations"][target_location]
+            description = f"Arriving at {location_data['name']}. {location_data['description']} {location_data['ambience']}"
             
-            if len(found_items) > 6:
-                response += f"\n...and {len(found_items) - 6} more! Would you like me to be more specific?"
-            else:
-                response += "\nWhich of these would you like to add to your cart? 😊"
-                
-            return response
+            # Check for location-specific events
+            if target_location == "engineering" and not self.game_state["events"]["met_engineer"]:
+                self.game_state["events"]["met_engineer"] = True
+                self.game_state["player"]["trust_level"] = min(100, self.game_state["player"]["trust_level"] + 5)
+                npc_data = self.world_info["npcs"]["engineer"]
+                description += f"\n\n{npc_data['name']} rushes over: '{npc_data['dialogue']}' Trust level increases by 5!"
+            
+            elif target_location == "command_deck" and not self.game_state["events"]["accessed_logs"]:
+                self.game_state["events"]["accessed_logs"] = True
+                self.game_state["player"]["trust_level"] = min(100, self.game_state["player"]["trust_level"] + 10)
+                self.game_state["player"]["clues_found"] += 1
+                description += f"\n\nYou access the encrypted logs. Suspicious data transfers detected 48 hours before blackout. A major clue! Trust +10."
+            
+            description += "\n\nWhat's your next move, Commander?"
+            return description
         else:
-            return f"I searched high and low but couldn't find '{query}'. Try searching by category like 'groceries', 'fruits', or 'snacks'. Or I can show you all categories!"
+            return "That sector is inaccessible. Available zones: docking, command, engineering, or habitat. Where should we investigate?"
 
     @function_tool
-    async def show_categories(self, context: RunContext) -> str:
-        """Show all available categories with enticing descriptions"""
-        if not self.catalog["categories"]:
-            return "Our store is getting ready! Categories will be available soon. 🛒"
+    async def check_status(self, context: RunContext) -> str:
+        """Check player's current status and inventory"""
+        player = self.game_state["player"]
+        trust_status = "High" if player["trust_level"] > 70 else "Moderate" if player["trust_level"] > 40 else "Low"
         
-        response = "Here are all our wonderful categories:\n\n"
-        category_descriptions = {
-            "Groceries": "Daily essentials like bread, milk, eggs and more! 🥚🥛",
-            "Fruits & Vegetables": "Fresh and crunchy fruits & veggies! 🍎🥦", 
-            "Snacks & Beverages": "Yummy snacks and refreshing drinks! 🍫🥤",
-            "Prepared Food": "Ready-to-eat delicious meals! 🍕🍛"
-        }
-        
-        for category in self.catalog["categories"]:
-            desc = category_descriptions.get(category["name"], "Amazing products!")
-            item_count = len(category["items"])
-            response += f"• {category['name']} - {desc} ({item_count} items)\n"
-        
-        response += "\nWhich category interests you? I can show you items from any category! 😊"
-        return response
+        return f"""🛸 Mission Status Report:
+
+❤️ Health: {player['health']}/100
+🔐 Trust Level: {player['trust_level']} ({trust_status})
+🔍 Clues Found: {player['clues_found']}
+💳 Credits: {player['credits']}
+🎒 Equipment: {', '.join(player['inventory'])}
+
+What's your next investigative step, Commander?"""
 
     @function_tool
-    async def place_order(self, context: RunContext, customer_name: str = "Valued Customer") -> str:
-        """Place the final order with celebration and save to file"""
-        if not self.cart:
-            return "Your cart is empty! Let's fill it with some delicious items first. What would you like to add? 🛒"
+    async def interview_crew(self, context: RunContext) -> str:
+        """Interview crew members to gather information"""
+        trust_gain = random.randint(5, 15)
+        self.game_state["player"]["trust_level"] = min(100, self.game_state["player"]["trust_level"] + trust_gain)
+        self.game_state["events"]["crew_interviewed"] += 1
+        
+        testimonies = [
+            "Lieutenant Hayes mentions seeing strange figures near the power core at 0300 hours. Security feeds were conveniently offline.",
+            "Navigator Reeves reports unusual quantum fluctuations in sector 7. The readings don't match any known phenomena.",
+            "Technician Park discovered foreign code in the environmental systems. Someone's been here who shouldn't be.",
+            "Dr. Sato reveals three crew members can't account for their whereabouts during the blackout. Memory gaps. Neural tampering suspected."
+        ]
+        
+        testimony = random.choice(testimonies)
+        return f"{testimony} Trust level increases by {trust_gain}! (Total: {self.game_state['player']['trust_level']}) Who else should we question?"
 
-        # Calculate total
-        total_amount = get_cart_total(self.cart)
-        item_count = sum(item["quantity"] for item in self.cart)
+    @function_tool
+    async def solve_puzzle(self, context: RunContext, answer: str) -> str:
+        """Decode encrypted messages and solve mysteries"""
+        correct_answers = ["sabotage", "insider", "traitor", "conspiracy", "infiltration"]
         
-        # Create comprehensive order object
-        order_data = {
-            "order_id": f"QB{datetime.now().strftime('%Y%m%d%H%M%S')}",
-            "customer_name": customer_name,
-            "timestamp": datetime.now().isoformat(),
-            "items": self.cart.copy(),
-            "item_count": item_count,
-            "total_amount": total_amount,
-            "status": "confirmed",
-            "delivery_estimate": "30-45 minutes",
-            "store": "foodieWay "
-        }
+        if any(correct in answer.lower() for correct in correct_answers):
+            self.game_state["player"]["trust_level"] = min(100, self.game_state["player"]["trust_level"] + 20)
+            self.game_state["player"]["clues_found"] += 1
+            self.game_state["events"]["decoded_message"] = True
+            return "Brilliant deduction, Commander! The encrypted message reveals an insider threat. Someone on this station orchestrated the blackout. Your investigative prowess is remarkable!"
+        else:
+            self.game_state["player"]["trust_level"] = max(0, self.game_state["player"]["trust_level"] - 5)
+            return "Negative, Commander. The pattern suggests something more sinister. What kind of threat requires both system access and intimate knowledge of station protocols? Think bigger."
+
+    @function_tool
+    async def save_game(self, context: RunContext) -> str:
+        """Save current game progress"""
+        # Update conversation summary
+        current_location = self.world_info["locations"][self.game_state["player"]["location"]]["name"]
+        summary = f"Investigating {current_location}. Trust Level: {self.game_state['player']['trust_level']}. Clues Found: {self.game_state['player']['clues_found']}. Crew Interviewed: {self.game_state['events']['crew_interviewed']}."
+        self.game_state["conversation_summary"] = summary
         
-        # Save order to file in orders folder
-        filename = save_order(order_data)
+        # Save game to database
+        filename = save_game_progress(self.game_state)
         
         if filename:
-            # Celebration message based on order size
-            if item_count >= 8:
-                celebration = "WOW! What a fantastic order! 🎉"
-            elif item_count >= 5:
-                celebration = "Excellent choices! Your order looks amazing! 🌟"
-            else:
-                celebration = "Lovely selection! Your order is perfect! 👍"
-            
-            # Clear cart after successful order
-            order_summary = self.cart.copy()
-            self.cart.clear()
-            
-            return f"""{celebration}
-
-🎊 ORDER PLACED SUCCESSFULLY! 🎊
-
-Order ID: {order_data['order_id']}
-Items: {item_count} products
-Total: ₹{total_amount}
-Delivery: {order_data['delivery_estimate']}
-
-Thank you for shopping with foodieWay! Your order has been saved and will be delivered soon. Shukriya! 💝"""
+            return f"📊 Mission progress logged to secure databanks! Your investigation will resume from this checkpoint when you return to Nexus Station."
         else:
-            return "Oh no! There was a small issue saving your order. Please try again in a moment. I'm really sorry for the inconvenience! 🙏"
+            return "Warning: Data storage malfunction detected. Progress not saved. Systems unstable. Retry when communications stabilize."
 
     @function_tool
-    async def clear_cart(self, context: RunContext) -> str:
-        """Clear all items from the cart with understanding response"""
-        if not self.cart:
-            return "Your cart is already empty and ready for new adventures! What would you like to add? 😊"
+    async def end_adventure(self, context: RunContext) -> str:
+        """End the adventure with a summary"""
+        # Create final summary
+        final_trust = self.game_state["player"]["trust_level"]
+        clues = self.game_state["player"]["clues_found"]
+        interviewed = self.game_state["events"]["crew_interviewed"]
         
-        item_count = len(self.cart)
-        self.cart.clear()
-        return f"Cleared your cart of {item_count} items. No problem at all! Fresh start - what delicious items would you like to add now? 🛒"
+        if final_trust >= 80:
+            ending = "Outstanding work, Commander! You've exposed the conspiracy and restored station security. Nexus Station is safe because of your exceptional investigation."
+        elif final_trust >= 50:
+            ending = "Solid investigation, Commander. The mystery is partially solved, but shadows remain. The station's safer, but vigilance is required."
+        else:
+            ending = "Investigation inconclusive, Commander. The blackout's cause remains elusive. Sometimes the truth hides in plain sight. Keep searching."
+        
+        summary = f"""🚀 Mission Debrief:
+
+🔐 Final Trust Level: {final_trust}
+🔍 Clues Discovered: {clues}
+👥 Crew Interviewed: {interviewed}
+
+{ending}
+
+Thank you for serving aboard Nexus Station, Commander. Your dedication to uncovering the truth is commendable. Stay vigilant out there!"""
+
+        # Save final game state
+        self.game_state["conversation_summary"] = summary
+        save_game_progress(self.game_state)
+        
+        return summary
 
 def prewarm(proc: JobProcess):
-    """Preload models and food catalog"""
-    logger.info("Prewarming foodieWay food ordering agent...")
+    """Preload models and game world data"""
+    logger.info("Prewarming Space Mystery agent...")
     proc.userdata["vad"] = silero.VAD.load()
-    # Preload food catalog
-    catalog = load_catalog()
-    if catalog and catalog["categories"]:
-        logger.info(f"Loaded catalog with {len(catalog['categories'])} categories during prewarm")
+    # Preload game world data
+    world_info = load_game_world()
+    if world_info:
+        logger.info("Game world data loaded successfully during prewarm")
     else:
-        logger.warning("Catalog is empty or couldn't be loaded during prewarm")
+        logger.error("Failed to load game world data during prewarm")
 
 async def entrypoint(ctx: JobContext):
     ctx.log_context_fields = {
         "room": ctx.room.name,
-        "agent": "foodieWay-ordering"
+        "agent": "space-mystery"
     }
     
-    logger.info("Starting foodieWay Food Ordering agent session...")
+    logger.info("Starting Space Mystery agent session...")
     
     try:
-        # Initialize Food Ordering agent
-        food_agent = FoodOrderingAgent()
-        logger.info("QuickBasket Food Ordering agent initialized successfully")
+        # Initialize Space Mystery agent
+        space_agent = SpaceMysteryAgent()
+        logger.info("Space Mystery agent initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize agent: {e}")
         return
 
-    # Set up voice AI pipeline with friendly Indian-accented voice
+    # Set up voice AI pipeline with FEMALE AI voice for ARIA
     session = AgentSession(
         stt=deepgram.STT(model="nova-2"),
         llm=google.LLM(
             model="gemini-2.0-flash",
         ),
         tts=murf.TTS(
-            voice="en-US-alicia",  # Friendly female voice
+            voice="en-US-natalie",  # Female AI voice for ARIA
             style="Conversation",
             tokenizer=tokenize.basic.SentenceTokenizer(min_sentence_len=2),
             text_pacing=True
@@ -441,11 +378,11 @@ async def entrypoint(ctx: JobContext):
     # Add event listeners for debugging
     @session.on("user_speech")
     def on_user_speech(transcript: str):
-        logger.info(f"Customer said: {transcript}")
+        logger.info(f"Commander said: {transcript}")
 
     @session.on("agent_speech") 
     def on_agent_speech(transcript: str):
-        logger.info(f"MIMI (Assistant) responding: {transcript}")
+        logger.info(f"ARIA responding: {transcript}")
 
     # Metrics collection
     usage_collector = metrics.UsageCollector()
@@ -462,20 +399,20 @@ async def entrypoint(ctx: JobContext):
     try:
         # Start the session
         await session.start(
-            agent=food_agent,
+            agent=space_agent,
             room=ctx.room,
             room_input_options=RoomInputOptions(
                 noise_cancellation=noise_cancellation.BVC(),
             ),
         )
-        logger.info("foodieWay ordering agent session started successfully")
+        logger.info("Space Mystery session started successfully")
         
         # Join the room and connect to the user
         await ctx.connect()
         logger.info("Connected to room successfully")
         
     except Exception as e:
-        logger.error(f"Error during foodieWay ordering session: {e}")
+        logger.error(f"Error during Space Mystery session: {e}")
         raise
 
 if __name__ == "__main__":
